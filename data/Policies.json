@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "name": "Refund Policy",
+    "title": "Sorry, there's no refund :(",
+    "description": "Just like you, we really love money. So when you send us money, you don't get it back"
+  },
+  {
+    "id": 2,
+    "name": "Ticket Cancellation",
+    "title": "Ticket Cancellation",
+    "description": "Tickets are eligible for cancellation are 24 hours before journey. Depends on vendor policies"
+  }
+]

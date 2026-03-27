@@ -1,5 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { ticketsColl } = require('../config/database');
+const { busFeatures } = require('../data/BusFeatures.json');
 
 function ticketsAPI(app) {
 
@@ -31,12 +32,12 @@ function ticketsAPI(app) {
                 to = '',
                 minPrice = 0,
                 maxPrice = Infinity,
-                wifi,
-                ac,
-                comfortSeats,
+                features = '',
                 type = '',
                 departureDate = '',
+                returnDate = '',
                 busBrand = '',
+                busCompany = '',
             } = req.query;
 
             const sortSettings = {};
@@ -61,6 +62,9 @@ function ticketsAPI(app) {
             if (busBrand) {
                 searchQuery.busBrand = { $regex: busBrand, $options: "i" };
             }
+            if (busCompany) {  // ADD THIS
+                searchQuery.busCompany = { $regex: busCompany, $options: "i" };
+            }
 
             if (minPrice || (maxPrice && maxPrice !== Infinity)) {
                 searchQuery.price = {};
@@ -69,17 +73,40 @@ function ticketsAPI(app) {
             }
 
             const requiredPerks = [];
-            if (wifi === 'true') requiredPerks.push("WiFi");
-            if (ac === 'true') requiredPerks.push("AC");
-            if (comfortSeats === 'true') requiredPerks.push("Comfortable Seats");
+            if (features) {
+                // Split by comma or plus sign and decode URL encoding
+                const selFeatures = features.split(',').map(f => 
+                    decodeURIComponent(f.trim())
+                );
+                
+                // Match requested features against available features (case-insensitive)
+                selFeatures.forEach(selFeatures => {
+                    const matchedFeature = busFeatures.find(available => 
+                        available.toLowerCase() === selFeatures.toLowerCase()
+                    );
+                    if (matchedFeature) {
+                        requiredPerks.push(matchedFeature);
+                    }
+                });
+            }
 
             if (requiredPerks.length > 0) {
                 searchQuery.perks = { $all: requiredPerks };
             }
+
             if (departureDate) {
                 const startOfDay = new Date(`${departureDate}T00:00:00`).toISOString();
                 const endOfDay = new Date(`${departureDate}T23:59:59`).toISOString();
                 searchQuery.departureDateTime = {
+                    $gte: startOfDay,
+                    $lte: endOfDay,
+                };
+            }
+
+            if (returnDate) {
+                const startOfDay = new Date(`${returnDate}T00:00:00`).toISOString();
+                const endOfDay = new Date(`${returnDate}T23:59:59`).toISOString();
+                searchQuery.returnDateTime = {
                     $gte: startOfDay,
                     $lte: endOfDay,
                 };
@@ -100,6 +127,7 @@ function ticketsAPI(app) {
                     to: 1,
                     transportType: 1,
                     busBrand: 1,
+                    busCompany: 1,
                     price: 1,
                     quantity: 1,
                     perks: 1,

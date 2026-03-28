@@ -147,6 +147,50 @@ function ticketsAPI(app) {
     });
 
 
+    // GET SINGLE TICKET BY ID
+    app.get("/tickets/:id", async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            // Validate ObjectId
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: "Invalid ticket ID" });
+            }
+
+            const ticket = await ticketsColl.findOne(
+                { _id: new ObjectId(id) },
+                {
+                    projection: {
+                        ticketTitle: 1,
+                        ticketID: 1,
+                        from: 1,
+                        to: 1,
+                        transportType: 1,
+                        busBrand: 1,
+                        busCompany: 1,
+                        price: 1,
+                        quantity: 1,
+                        perks: 1,
+                        departureDateTime: 1,
+                        returnDateTime: 1,
+                        vendorName: 1,
+                        bookingStatus: 1,
+                        createdAt: 1,
+                    }
+                }
+            );
+
+            if (!ticket) {
+                return res.status(404).send({ error: "Ticket not found" });
+            }
+
+            res.send(ticket);
+        } catch (error) {
+            console.error("Error fetching ticket:", error);
+            res.status(500).json({ error: "Internal Server Error" });
+        }
+    });
+
 }
 
 module.exports = ticketsAPI;

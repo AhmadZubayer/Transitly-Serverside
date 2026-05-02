@@ -28,5 +28,6 @@ async function run() {
 const myDB = client.db("transitly");
 const usersColl = myDB.collection("users");
 const ticketsColl = myDB.collection("tickets");
+const paymentsColl = myDB.collection("payments");
 
-module.exports = { client, run, myDB, usersColl, ticketsColl };
+module.exports = { client, run, myDB, usersColl, ticketsColl, paymentsColl };

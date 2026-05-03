@@ -1,13 +1,18 @@
 const { ObjectId } = require('mongodb');
 const { ticketsColl } = require('../config/database');
 const { busFeatures } = require('../data/BusFeatures.json');
+const { verifyFBToken, verifyAdmin, verifyVendor } = require('../firebase/firebaseVerify');
 
 function ticketsAPI(app) {
 
     // POST TICKETS
-    app.post('/tickets', async (req, res) => {
+    app.post('/tickets', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const ticketData = req.body;
+            // vendor can only create tickets for themself
+            if (ticketData?.vendorEmail && ticketData.vendorEmail !== req.decoded_email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
             ticketData.createdAt = new Date();
             const result = await ticketsColl.insertOne(ticketData);
             res.send(result);
@@ -46,8 +51,17 @@ function ticketsAPI(app) {
             sortSettings[sortField] = order === 'asc' ? 1 : -1;
 
             const searchQuery = {};
+            // Public listing should only show admin-verified tickets
+            searchQuery.adminVerified = 'Yes';
             if (search) {
-                searchQuery.ticketTitle = { $regex: search, $options: "i" };
+                searchQuery.$or = [
+                    { ticketTitle: { $regex: search, $options: "i" } },
+                    { from: { $regex: search, $options: "i" } },
+                    { to: { $regex: search, $options: "i" } },
+                    { busBrand: { $regex: search, $options: "i" } },
+                    { busCompany: { $regex: search, $options: "i" } },
+                    { transportType: { $regex: search, $options: "i" } },
+                ];
             }
             if (from) {
                 searchQuery.from = { $regex: from, $options: "i" };
@@ -146,9 +160,230 @@ function ticketsAPI(app) {
         }
     });
 
+    // GET ALL TICKETS (ADMIN)
+    app.get('/tickets/all', verifyFBToken, verifyAdmin, async (req, res) => {
+        try {
+            const { filter = 'all', limit = 20, skip = 0 } = req.query;
+            const query = {};
+            if (filter === 'pending') {
+                query.adminVerified = 'No';
+            }
+            const tickets = await ticketsColl
+                .find(query)
+                .sort({ createdAt: -1 })
+                .limit(Number(limit))
+                .skip(Number(skip))
+                .toArray();
+            const total = await ticketsColl.countDocuments(query);
+            res.send({ tickets, total });
+        } catch (error) {
+            console.error('Database error, Unable to fetch tickets (admin):', error);
+            res.status(500).send({ error: 'Failed to fetch tickets' });
+        }
+    });
+
+    // GET VENDOR TICKETS
+    app.get('/tickets/vendor/:email', verifyFBToken, verifyVendor, async (req, res) => {
+        try {
+            const { email } = req.params;
+            if (email !== req.decoded_email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            const tickets = await ticketsColl.find({ vendorEmail: email }).sort({ createdAt: -1 }).toArray();
+            res.send(tickets);
+        } catch (error) {
+            console.error('Database error, Unable to fetch vendor tickets:', error);
+            res.status(500).send({ error: 'Failed to fetch vendor tickets' });
+        }
+    });
+
+    // PATCH - VERIFY TICKET (ADMIN)
+    app.patch('/tickets/:id/verify', verifyFBToken, verifyAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid ticket ID' });
+            }
+            const result = await ticketsColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { adminVerified: 'Yes', verifiedAt: new Date() } }
+            );
+            if (!result.matchedCount) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+            res.send(result);
+        } catch (error) {
+            console.error('Database error, Unable to verify ticket:', error);
+            res.status(500).send({ error: 'Failed to verify ticket' });
+        }
+    });
+
+    // PATCH - FEATURE TICKET (ADMIN)
+    app.patch('/tickets/:id/feature', verifyFBToken, verifyAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { adminFeatured } = req.body;
+
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid ticket ID' });
+            }
+
+            const allowed = ['Yes', 'No'];
+            if (!allowed.includes(adminFeatured)) {
+                return res.status(400).send({ error: 'Invalid adminFeatured value' });
+            }
+
+            const result = await ticketsColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { adminFeatured, featuredAt: adminFeatured === 'Yes' ? new Date() : null } }
+            );
+
+            if (!result.matchedCount) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+
+            res.send(result);
+        } catch (error) {
+            console.error('Database error, Unable to feature ticket:', error);
+            res.status(500).send({ error: 'Failed to feature ticket' });
+        }
+    });
+
+    // PATCH - UPDATE TICKET (VENDOR)
+    app.patch('/tickets/:id', verifyFBToken, verifyVendor, async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid ticket ID' });
+            }
+
+            const existing = await ticketsColl.findOne(
+                { _id: new ObjectId(id) },
+                { projection: { vendorEmail: 1, adminVerified: 1 } }
+            );
+            if (!existing) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+            if (existing.vendorEmail !== req.decoded_email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            if ((existing.adminVerified || 'No') === 'Yes') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const update = { ...req.body };
+            delete update._id;
+
+            const result = await ticketsColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: update }
+            );
+
+            if (!result.matchedCount) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+
+            res.send(result);
+        } catch (error) {
+            console.error('Database error, Unable to update ticket:', error);
+            res.status(500).send({ error: 'Failed to update ticket' });
+        }
+    });
+
+    // DELETE - TICKET (VENDOR/ADMIN)
+    app.delete('/tickets/:id', verifyFBToken, async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid ticket ID' });
+            }
+
+            // allow admin OR ticket owner vendor
+            const requester = await ticketsColl.findOne(
+                { _id: new ObjectId(id) },
+                { projection: { vendorEmail: 1 } }
+            );
+            if (!requester) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+            const user = await require('../config/database').usersColl.findOne(
+                { email: req.decoded_email },
+                { projection: { role: 1 } }
+            );
+            const isAdmin = user?.role === 'admin';
+            const isOwnerVendor = requester.vendorEmail === req.decoded_email;
+            if (!isAdmin && !isOwnerVendor) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const result = await ticketsColl.deleteOne({ _id: new ObjectId(id) });
+            if (!result.deletedCount) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+            res.send(result);
+        } catch (error) {
+            console.error('Database error, Unable to delete ticket:', error);
+            res.status(500).send({ error: 'Failed to delete ticket' });
+        }
+    });
+
+    // GET ADVERTISED TICKETS (Homepage Advertisement Section - 6 tickets)
+app.get("/tickets/advertised", async (req, res) => {
+    try {
+        const tickets = await ticketsColl
+            .find({ adminVerified: 'Yes', adminFeatured: 'Yes' })
+            .sort({ featuredAt: -1 })
+            .limit(6)
+            .project({
+                ticketTitle: 1,
+                image: 1,
+                price: 1,
+                quantity: 1,
+                transportType: 1,
+                perks: 1,
+                from: 1,
+                to: 1,
+            })
+            .toArray();
+
+        res.send(tickets);
+    } catch (error) {
+        console.error("Failed to fetch advertised tickets:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// GET LATEST TICKETS (Homepage Latest Section - 6 to 8 tickets)
+app.get("/tickets/latest", async (req, res) => {
+    try {
+        const { limit = 8 } = req.query;
+
+        const tickets = await ticketsColl
+            .find({ adminVerified: 'Yes' })
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .project({
+                ticketTitle: 1,
+                image: 1,
+                price: 1,
+                quantity: 1,
+                transportType: 1,
+                perks: 1,
+                from: 1,
+                to: 1,
+            })
+            .toArray();
+
+        res.send(tickets);
+    } catch (error) {
+        console.error("Failed to fetch latest tickets:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
 
     // GET SINGLE TICKET BY ID
-    app.get("/tickets/:id", async (req, res) => {
+     app.get("/tickets/:id", async (req, res) => {
         try {
             const { id } = req.params;
 
@@ -190,6 +425,8 @@ function ticketsAPI(app) {
             res.status(500).json({ error: "Internal Server Error" });
         }
     });
+
+  
 
 }
 

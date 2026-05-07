@@ -233,6 +233,27 @@ function ticketsAPI(app) {
         }
     });
 
+    // PATCH - REJECT TICKET (ADMIN)
+    app.patch('/tickets/:id/reject', verifyFBToken, verifyAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid ticket ID' });
+            }
+            const result = await ticketsColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { adminVerified: 'Rejected', rejectedAt: new Date() } }
+            );
+            if (!result.matchedCount) {
+                return res.status(404).send({ error: 'Ticket not found' });
+            }
+            res.send(result);
+        } catch (error) {
+            console.error('Database error, Unable to reject ticket:', error);
+            res.status(500).send({ error: 'Failed to reject ticket' });
+        }
+    });
+
     // PATCH - FEATURE TICKET (ADMIN)
     app.patch('/tickets/:id/feature', verifyFBToken, verifyAdmin, async (req, res) => {
         try {
@@ -345,8 +366,17 @@ function ticketsAPI(app) {
     // GET ADVERTISED TICKETS (Homepage Advertisement Section - 6 tickets)
 app.get("/tickets/advertised", async (req, res) => {
     try {
+        // Hide tickets from fraud vendors
+        const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
+        const fraudEmails = fraudVendors.map(v => v.email);
+        
+        const query = { adminVerified: 'Yes', adminFeatured: 'Yes' };
+        if (fraudEmails.length > 0) {
+            query.vendorEmail = { $nin: fraudEmails };
+        }
+
         const tickets = await ticketsColl
-            .find({ adminVerified: 'Yes', adminFeatured: 'Yes' })
+            .find(query)
             .sort({ featuredAt: -1 })
             .limit(6)
             .project({
@@ -375,8 +405,17 @@ app.get("/tickets/latest", async (req, res) => {
     try {
         const { limit = 8 } = req.query;
 
+        // Hide tickets from fraud vendors
+        const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
+        const fraudEmails = fraudVendors.map(v => v.email);
+
+        const query = { adminVerified: 'Yes' };
+        if (fraudEmails.length > 0) {
+            query.vendorEmail = { $nin: fraudEmails };
+        }
+
         const tickets = await ticketsColl
-            .find({ adminVerified: 'Yes' })
+            .find(query)
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .project({
@@ -412,33 +451,39 @@ app.get("/tickets/latest", async (req, res) => {
             }
 
             const ticket = await ticketsColl.findOne(
-                { _id: new ObjectId(id) },
-                {
-                    projection: {
-                        ticketTitle: 1,
-                        ticketID: 1,
-                        from: 1,
-                        to: 1,
-                        transportType: 1,
-                        busBrand: 1,
-                        busCompany: 1,
-                        price: 1,
-                        quantity: 1,
-                        perks: 1,
-                        departureDateTime: 1,
-                        returnDateTime: 1,
-                        vendorName: 1,
-                        bookingStatus: 1,
-                        createdAt: 1,
-                    }
-                }
+                { _id: new ObjectId(id) }
             );
 
             if (!ticket) {
                 return res.status(404).send({ error: "Ticket not found" });
             }
 
-            res.send(ticket);
+            // Check if vendor is fraud
+            const vendor = await usersColl.findOne({ email: ticket.vendorEmail }, { projection: { role: 1 } });
+            if (vendor?.role === 'fraud') {
+                return res.status(403).send({ error: "This ticket is no longer available" });
+            }
+
+            // Return projected fields
+            const projectedTicket = {
+                ticketTitle: ticket.ticketTitle,
+                ticketID: ticket.ticketID,
+                from: ticket.from,
+                to: ticket.to,
+                transportType: ticket.transportType,
+                busBrand: ticket.busBrand,
+                busCompany: ticket.busCompany,
+                price: ticket.price,
+                quantity: ticket.quantity,
+                perks: ticket.perks,
+                departureDateTime: ticket.departureDateTime,
+                returnDateTime: ticket.returnDateTime,
+                vendorName: ticket.vendorName,
+                bookingStatus: ticket.bookingStatus,
+                createdAt: ticket.createdAt,
+            };
+
+            res.send(projectedTicket);
         } catch (error) {
             console.error("Error fetching ticket:", error);
             res.status(500).json({ error: "Internal Server Error" });

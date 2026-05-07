@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { ticketsColl } = require('../config/database');
+const { ticketsColl, usersColl } = require('../config/database');
 const { busFeatures } = require('../data/BusFeatures.json');
 const { verifyFBToken, verifyAdmin, verifyVendor } = require('../firebase/firebaseVerify');
 
@@ -13,6 +13,13 @@ function ticketsAPI(app) {
             if (ticketData?.vendorEmail && ticketData.vendorEmail !== req.decoded_email) {
                 return res.status(403).send({ message: 'forbidden access' });
             }
+
+            // Check if vendor is fraud
+            const user = await usersColl.findOne({ email: req.decoded_email });
+            if (user?.role === 'fraud') {
+                return res.status(403).send({ message: 'Fraud vendors cannot add tickets' });
+            }
+
             ticketData.createdAt = new Date();
             const result = await ticketsColl.insertOne(ticketData);
             res.send(result);
@@ -53,6 +60,14 @@ function ticketsAPI(app) {
             const searchQuery = {};
             // Public listing should only show admin-verified tickets
             searchQuery.adminVerified = 'Yes';
+
+            // Hide tickets from fraud vendors
+            const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
+            const fraudEmails = fraudVendors.map(v => v.email);
+            if (fraudEmails.length > 0) {
+                searchQuery.vendorEmail = { $nin: fraudEmails };
+            }
+
             if (search) {
                 searchQuery.$or = [
                     { ticketTitle: { $regex: search, $options: "i" } },
@@ -340,6 +355,8 @@ app.get("/tickets/advertised", async (req, res) => {
                 price: 1,
                 quantity: 1,
                 transportType: 1,
+                busCompany: 1,
+                departureDateTime: 1,
                 perks: 1,
                 from: 1,
                 to: 1,
@@ -368,6 +385,8 @@ app.get("/tickets/latest", async (req, res) => {
                 price: 1,
                 quantity: 1,
                 transportType: 1,
+                busCompany: 1,
+                departureDateTime: 1,
                 perks: 1,
                 from: 1,
                 to: 1,

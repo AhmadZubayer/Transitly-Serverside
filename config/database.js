@@ -29,5 +29,6 @@ const myDB = client.db("transitly");
 const usersColl = myDB.collection("users");
 const ticketsColl = myDB.collection("tickets");
 const paymentsColl = myDB.collection("payments");
+const bookingsColl = myDB.collection("bookings");
 
-module.exports = { client, run, myDB, usersColl, ticketsColl, paymentsColl };
+module.exports = { client, run, myDB, usersColl, ticketsColl, paymentsColl, bookingsColl };

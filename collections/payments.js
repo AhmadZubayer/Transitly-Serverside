@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { paymentsColl, ticketsColl, usersColl } = require('../config/database');
+const { paymentsColl, ticketsColl, usersColl, bookingsColl } = require('../config/database');
 
 function paymentAPI(app, stripe) {
 
@@ -23,7 +23,8 @@ function paymentAPI(app, stripe) {
                 mode: 'payment',
                 metadata: {
                     ticketId: paymentInfo.ticketId,
-                    quantity: paymentInfo.quantity
+                    quantity: paymentInfo.quantity,
+                    bookingId: paymentInfo.bookingId
                 },
                 customer_email: paymentInfo.senderEmail,
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
@@ -36,7 +37,7 @@ function paymentAPI(app, stripe) {
      // Store Payment Data & Subtract Ticket Quantity
      app.post('/store-payment', async (req, res) => {
             try {
-                const { userEmail, ticketId, quantity, totalPrice, stripeSessionId } = req.body;
+                const { userEmail, ticketId, quantity, totalPrice, stripeSessionId, bookingId } = req.body;
 
                 const parsedQuantity = parseInt(quantity);
                 const parsedTotalPrice = parseFloat(totalPrice);
@@ -62,6 +63,14 @@ function paymentAPI(app, stripe) {
                     return res.status(500).send({ error: "Failed to update ticket quantity" });
                 }
 
+                // Update booking status to 'paid' if bookingId is provided
+                if (bookingId && ObjectId.isValid(bookingId)) {
+                    await bookingsColl.updateOne(
+                        { _id: new ObjectId(bookingId) },
+                        { $set: { status: 'paid', updatedAt: new Date() } }
+                    );
+                }
+
                 // Revenue split: 70% vendor, 30% platform
                 const vendorShare = Number((parsedTotalPrice * 0.7).toFixed(2));
                 const platformShare = Number((parsedTotalPrice * 0.3).toFixed(2));
@@ -70,6 +79,7 @@ function paymentAPI(app, stripe) {
                 const paymentData = {
                     userEmail,
                     ticketId: new ObjectId(ticketId),
+                    bookingId: bookingId ? new ObjectId(bookingId) : null,
                     quantity: parsedQuantity,
                     totalPrice: parsedTotalPrice,
                     vendorEmail: ticket.vendorEmail || null,
@@ -84,10 +94,26 @@ function paymentAPI(app, stripe) {
                 const result = await paymentsColl.insertOne(paymentData);
 
                 console.log("Payment stored successfully:", result.insertedId);
+
+                // Fetch the complete booking with ticket details for the response
+                const completeBooking = await paymentsColl.aggregate([
+                    { $match: { _id: result.insertedId } },
+                    {
+                        $lookup: {
+                            from: 'tickets',
+                            localField: 'ticketId',
+                            foreignField: '_id',
+                            as: 'ticket'
+                        }
+                    },
+                    { $unwind: '$ticket' }
+                ]).toArray();
+
                 res.send({
                     success: true,
                     message: "Payment stored and ticket quantity updated successfully",
-                    paymentId: result.insertedId
+                    paymentId: result.insertedId,
+                    booking: completeBooking[0]
                 });
             } catch (error) {
                 console.error("Payment storage error:", error);

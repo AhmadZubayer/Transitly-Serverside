@@ -7,6 +7,7 @@ const usersAPI = require('./collections/users');
 const ticketsAPI = require('./collections/tickets');
 const staticDataAPI = require('./collections/staticData');
 const paymentAPI = require('./collections/payments');
+const bookingsAPI = require('./collections/bookings');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ usersAPI(app);
 ticketsAPI(app);
 staticDataAPI(app);
 paymentAPI(app, stripe);
+bookingsAPI(app);
 
 run().then(() => {
         app.listen(port, () => {

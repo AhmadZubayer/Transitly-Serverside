@@ -466,6 +466,7 @@ app.get("/tickets/latest", async (req, res) => {
 
             // Return projected fields
             const projectedTicket = {
+                _id: ticket._id,
                 ticketTitle: ticket.ticketTitle,
                 ticketID: ticket.ticketID,
                 from: ticket.from,

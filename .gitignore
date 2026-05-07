@@ -1,3 +1,4 @@
 node\_modules
 .env
 transitly-firebase-adminsdk.json
+.vercel

@@ -4,15 +4,36 @@ const { verifyFBToken, verifyAdmin } = require('../firebase/firebaseVerify');
 
 function usersAPI(app) {
 
-	// POST - Create New User
+	// POST - Create or Update User (Upsert)
 	app.post('/users', async (req, res) => {
 		try {
 			const userData = req.body;
-			userData.role = 'user';
-			const result = await usersColl.insertOne(userData);
-			res.send(result);
-			console.log("DB POST: User created -", userData.email);
-			console.log(result);
+			const query = { email: userData.email };
+			
+			// Check if user already exists
+			const existingUser = await usersColl.findOne(query);
+			
+			if (existingUser) {
+				// Update existing user but keep their role
+				const updateDoc = {
+					$set: {
+						displayName: userData.displayName || existingUser.displayName,
+						photoURL: userData.photoURL || existingUser.photoURL,
+						phone: userData.phone || existingUser.phone || '',
+						updatedAt: new Date()
+					}
+				};
+				const result = await usersColl.updateOne(query, updateDoc);
+				res.send(result);
+				console.log("DB POST: User updated -", userData.email);
+			} else {
+				// Create new user with default role
+				userData.role = 'user';
+				userData.createdAt = new Date();
+				const result = await usersColl.insertOne(userData);
+				res.send(result);
+				console.log("DB POST: User created -", userData.email);
+			}
 		} catch (error) {
 			console.error("Database error:", error);
 			res.status(500).send({ error: "Failed to save user" });

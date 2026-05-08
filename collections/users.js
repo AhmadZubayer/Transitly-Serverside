@@ -4,17 +4,14 @@ const { verifyFBToken, verifyAdmin } = require('../firebase/firebaseVerify');
 
 function usersAPI(app) {
 
-	// POST - Create or Update User (Upsert)
 	app.post('/users', async (req, res) => {
 		try {
 			const userData = req.body;
 			const query = { email: userData.email };
-			
-			// Check if user already exists
+
 			const existingUser = await usersColl.findOne(query);
 			
 			if (existingUser) {
-				// Update existing user but keep their role
 				const updateDoc = {
 					$set: {
 						displayName: userData.displayName || existingUser.displayName,
@@ -27,7 +24,6 @@ function usersAPI(app) {
 				res.send(result);
 				console.log("DB POST: User updated -", userData.email);
 			} else {
-				// Create new user with default role
 				userData.role = 'user';
 				userData.createdAt = new Date();
 				const result = await usersColl.insertOne(userData);
@@ -40,7 +36,6 @@ function usersAPI(app) {
 		}
 	});
 
-	// GET - Get all users (optional)
 	app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
 		try {
 			const users = await usersColl.find({}).toArray();
@@ -51,7 +46,6 @@ function usersAPI(app) {
 		}
 	});
 
-	// GET - Get user by email
 	app.get('/users/:email', verifyFBToken, async (req, res) => {
 		try {
 			const { email } = req.params;
@@ -69,11 +63,10 @@ function usersAPI(app) {
 		}
 	});
 
-	// GET - Get user role by email
 	app.get('/users/:email/role', verifyFBToken, async (req, res) => {
 		try {
 			const { email } = req.params;
-			// only the user themself (or admin) can read this
+			
 			if (email !== req.decoded_email) {
 				const requester = await usersColl.findOne({ email: req.decoded_email }, { projection: { role: 1 } });
 				if (!requester || requester.role !== 'admin') {
@@ -91,7 +84,6 @@ function usersAPI(app) {
 		}
 	});
 
-	// PATCH - Update user role by id
 	app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
 		try {
 			const { id } = req.params;

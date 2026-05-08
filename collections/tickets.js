@@ -9,12 +9,10 @@ function ticketsAPI(app) {
     app.post('/tickets', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const ticketData = req.body;
-            // vendor can only create tickets for themself
             if (ticketData?.vendorEmail && ticketData.vendorEmail !== req.decoded_email) {
                 return res.status(403).send({ message: 'forbidden access' });
             }
 
-            // Check if vendor is fraud
             const user = await usersColl.findOne({ email: req.decoded_email });
             if (user?.role === 'fraud') {
                 return res.status(403).send({ message: 'Fraud vendors cannot add tickets' });
@@ -31,7 +29,6 @@ function ticketsAPI(app) {
         }
     })
 
-    // GET ALL TICKETS FOR PUBLIC ROUTES
     app.get("/tickets", async (req, res) => {
         try {
             const {
@@ -58,10 +55,8 @@ function ticketsAPI(app) {
             sortSettings[sortField] = order === 'asc' ? 1 : -1;
 
             const searchQuery = {};
-            // Public listing should only show admin-verified tickets
             searchQuery.adminVerified = 'Yes';
 
-            // Hide tickets from fraud vendors
             const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
             const fraudEmails = fraudVendors.map(v => v.email);
             if (fraudEmails.length > 0) {
@@ -91,7 +86,7 @@ function ticketsAPI(app) {
             if (busBrand) {
                 searchQuery.busBrand = { $regex: busBrand, $options: "i" };
             }
-            if (busCompany) {  // ADD THIS
+            if (busCompany) {  
                 searchQuery.busCompany = { $regex: busCompany, $options: "i" };
             }
 
@@ -103,12 +98,10 @@ function ticketsAPI(app) {
 
             const requiredPerks = [];
             if (features) {
-                // Split by comma or plus sign and decode URL encoding
                 const selFeatures = features.split(',').map(f => 
                     decodeURIComponent(f.trim())
                 );
                 
-                // Match requested features against available features (case-insensitive)
                 selFeatures.forEach(selFeatures => {
                     const matchedFeature = busFeatures.find(available => 
                         available.toLowerCase() === selFeatures.toLowerCase()
@@ -175,7 +168,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // GET ALL TICKETS (ADMIN)
     app.get('/tickets/all', verifyFBToken, verifyAdmin, async (req, res) => {
         try {
             const { filter = 'all', limit = 20, skip = 0 } = req.query;
@@ -197,7 +189,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // GET VENDOR TICKETS
     app.get('/tickets/vendor/:email', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const { email } = req.params;
@@ -212,7 +203,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // PATCH - VERIFY TICKET (ADMIN)
     app.patch('/tickets/:id/verify', verifyFBToken, verifyAdmin, async (req, res) => {
         try {
             const { id } = req.params;
@@ -233,7 +223,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // PATCH - REJECT TICKET (ADMIN)
     app.patch('/tickets/:id/reject', verifyFBToken, verifyAdmin, async (req, res) => {
         try {
             const { id } = req.params;
@@ -254,7 +243,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // PATCH - FEATURE TICKET (ADMIN)
     app.patch('/tickets/:id/feature', verifyFBToken, verifyAdmin, async (req, res) => {
         try {
             const { id } = req.params;
@@ -285,7 +273,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // PATCH - UPDATE TICKET (VENDOR)
     app.patch('/tickets/:id', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const { id } = req.params;
@@ -326,7 +313,6 @@ function ticketsAPI(app) {
         }
     });
 
-    // DELETE - TICKET (VENDOR/ADMIN)
     app.delete('/tickets/:id', verifyFBToken, async (req, res) => {
         try {
             const { id } = req.params;
@@ -334,7 +320,7 @@ function ticketsAPI(app) {
                 return res.status(400).send({ error: 'Invalid ticket ID' });
             }
 
-            // allow admin OR ticket owner vendor
+           
             const requester = await ticketsColl.findOne(
                 { _id: new ObjectId(id) },
                 { projection: { vendorEmail: 1 } }
@@ -363,10 +349,10 @@ function ticketsAPI(app) {
         }
     });
 
-    // GET ADVERTISED TICKETS (Homepage Advertisement Section - 6 tickets)
+    
 app.get("/tickets/advertised", async (req, res) => {
     try {
-        // Hide tickets from fraud vendors
+     
         const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
         const fraudEmails = fraudVendors.map(v => v.email);
         
@@ -400,12 +386,11 @@ app.get("/tickets/advertised", async (req, res) => {
     }
 });
 
-// GET LATEST TICKETS (Homepage Latest Section - 6 to 8 tickets)
+
 app.get("/tickets/latest", async (req, res) => {
     try {
         const { limit = 8 } = req.query;
 
-        // Hide tickets from fraud vendors
         const fraudVendors = await usersColl.find({ role: 'fraud' }, { projection: { email: 1 } }).toArray();
         const fraudEmails = fraudVendors.map(v => v.email);
 
@@ -439,13 +424,11 @@ app.get("/tickets/latest", async (req, res) => {
     }
 });
 
-
-    // GET SINGLE TICKET BY ID
      app.get("/tickets/:id", async (req, res) => {
         try {
             const { id } = req.params;
 
-            // Validate ObjectId
+           
             if (!ObjectId.isValid(id)) {
                 return res.status(400).send({ error: "Invalid ticket ID" });
             }
@@ -458,13 +441,12 @@ app.get("/tickets/latest", async (req, res) => {
                 return res.status(404).send({ error: "Ticket not found" });
             }
 
-            // Check if vendor is fraud
+           
             const vendor = await usersColl.findOne({ email: ticket.vendorEmail }, { projection: { role: 1 } });
             if (vendor?.role === 'fraud') {
                 return res.status(403).send({ error: "This ticket is no longer available" });
             }
 
-            // Return projected fields
             const projectedTicket = {
                 _id: ticket._id,
                 ticketTitle: ticket.ticketTitle,

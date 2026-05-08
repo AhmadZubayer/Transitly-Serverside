@@ -3,7 +3,6 @@ const { paymentsColl, ticketsColl, usersColl, bookingsColl } = require('../confi
 
 function paymentAPI(app, stripe) {
 
-     // Create Stripe Checkout Session
      app.post('/create-checkout-session', async (req, res) => {
             const paymentInfo = req.body;
             const amount = parseInt(paymentInfo.totalPrice) * 100;
@@ -34,7 +33,7 @@ function paymentAPI(app, stripe) {
             res.send({ url: session.url })
         })
 
-     // Store Payment Data & Subtract Ticket Quantity
+     
      app.post('/store-payment', async (req, res) => {
             try {
                 const { userEmail, ticketId, quantity, totalPrice, stripeSessionId, bookingId } = req.body;
@@ -42,7 +41,6 @@ function paymentAPI(app, stripe) {
                 const parsedQuantity = parseInt(quantity);
                 const parsedTotalPrice = parseFloat(totalPrice);
 
-                // Check if ticket exists and has enough quantity
                 const ticket = await ticketsColl.findOne({ _id: new ObjectId(ticketId) });
 
                 if (!ticket) {
@@ -53,7 +51,7 @@ function paymentAPI(app, stripe) {
                     return res.status(400).send({ error: "Not enough tickets available" });
                 }
 
-                // Subtract ticket quantity
+         
                 const ticketUpdateResult = await ticketsColl.updateOne(
                     { _id: new ObjectId(ticketId) },
                     { $inc: { quantity: -parsedQuantity } }
@@ -63,7 +61,7 @@ function paymentAPI(app, stripe) {
                     return res.status(500).send({ error: "Failed to update ticket quantity" });
                 }
 
-                // Update booking status to 'paid' if bookingId is provided
+              
                 if (bookingId && ObjectId.isValid(bookingId)) {
                     await bookingsColl.updateOne(
                         { _id: new ObjectId(bookingId) },
@@ -71,11 +69,11 @@ function paymentAPI(app, stripe) {
                     );
                 }
 
-                // Revenue split: 70% vendor, 30% platform
+             
                 const vendorShare = Number((parsedTotalPrice * 0.7).toFixed(2));
                 const platformShare = Number((parsedTotalPrice * 0.3).toFixed(2));
 
-                // Store payment record
+            
                 const paymentData = {
                     userEmail,
                     ticketId: new ObjectId(ticketId),
@@ -95,7 +93,7 @@ function paymentAPI(app, stripe) {
 
                 console.log("Payment stored successfully:", result.insertedId);
 
-                // Fetch the complete booking with ticket details for the response
+        
                 const completeBooking = await paymentsColl.aggregate([
                     { $match: { _id: result.insertedId } },
                     {
@@ -121,7 +119,7 @@ function paymentAPI(app, stripe) {
             }
         })
 
-     // Vendor analytics (revenue/sold/added) - last N days
+  
      app.get('/vendor-analytics/:email', async (req, res) => {
             try {
                 const { email } = req.params;
@@ -129,7 +127,7 @@ function paymentAPI(app, stripe) {
                 const start = new Date();
                 start.setDate(start.getDate() - (Number.isFinite(days) ? days : 30));
 
-                // Payments aggregated by day for this vendor
+              
                 const paymentAgg = await paymentsColl
                     .aggregate([
                         {
@@ -171,7 +169,7 @@ function paymentAPI(app, stripe) {
                     ])
                     .toArray();
 
-                // Tickets added aggregated by day for this vendor
+             
                 const ticketsAgg = await ticketsColl
                     .aggregate([
                         {
@@ -208,7 +206,6 @@ function paymentAPI(app, stripe) {
             }
         })
 
-     // Platform analytics (overall + earnings)
      app.get('/platform-analytics', async (req, res) => {
             try {
                 const days = Number(req.query.days || 30);
@@ -266,7 +263,6 @@ function paymentAPI(app, stripe) {
             }
         })
 
-     // Get Payments by User Email (with ticket details, deduplicated)
      app.get('/payments/user/:email', async (req, res) => {
             try {
                 const { email } = req.params;
@@ -301,7 +297,6 @@ function paymentAPI(app, stripe) {
             }
         })
 
-     // Get Payment by ID
      app.get('/payments/:paymentId', async (req, res) => {
             try {
                 const { paymentId } = req.params;
@@ -325,7 +320,6 @@ function paymentAPI(app, stripe) {
             }
         })
 
-     // Get Payments by Ticket ID
      app.get('/payments/ticket/:ticketId', async (req, res) => {
             try {
                 const { ticketId } = req.params;

@@ -294,11 +294,7 @@ function paymentAPI(app, stripe) {
                     ])
                     .toArray();
 
-                if (!payments || payments.length === 0) {
-                    return res.status(404).send({ error: "No payments found for this user" });
-                }
-
-                res.send(payments);
+                res.send(payments || []);
             } catch (error) {
                 console.error("Error fetching user payments:", error);
                 res.status(500).send({ error: "Failed to fetch payments" });
@@ -343,11 +339,7 @@ function paymentAPI(app, stripe) {
                     .sort({ paymentDate: -1 })
                     .toArray();
 
-                if (!payments || payments.length === 0) {
-                    return res.status(404).send({ error: "No payments found for this ticket" });
-                }
-
-                res.send(payments);
+                res.send(payments || []);
             } catch (error) {
                 console.error("Error fetching ticket payments:", error);
                 res.status(500).send({ error: "Failed to fetch payments" });

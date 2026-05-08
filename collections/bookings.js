@@ -3,7 +3,6 @@ const { bookingsColl, ticketsColl } = require('../config/database');
 const { verifyFBToken, verifyVendor } = require('../firebase/firebaseVerify');
 
 function bookingsAPI(app) {
-    // POST - Create a new booking request (Status: Pending)
     app.post('/bookings', verifyFBToken, async (req, res) => {
         try {
             const bookingData = req.body;
@@ -11,7 +10,6 @@ function bookingsAPI(app) {
             bookingData.status = 'pending';
             bookingData.createdAt = new Date();
             
-            // Ensure ticketId is an ObjectId
             if (bookingData.ticketId) {
                 bookingData.ticketId = new ObjectId(bookingData.ticketId);
             }
@@ -24,7 +22,6 @@ function bookingsAPI(app) {
         }
     });
 
-    // GET - Bookings for a specific user
     app.get('/bookings/user/:email', verifyFBToken, async (req, res) => {
         try {
             const { email } = req.params;
@@ -53,7 +50,6 @@ function bookingsAPI(app) {
         }
     });
 
-    // GET - Requested bookings for a vendor
     app.get('/bookings/vendor/:email', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const { email } = req.params;
@@ -82,7 +78,6 @@ function bookingsAPI(app) {
         }
     });
 
-    // PATCH - Update booking status (Accepted/Rejected)
     app.patch('/bookings/:id/status', verifyFBToken, verifyVendor, async (req, res) => {
         try {
             const { id } = req.params;
@@ -97,7 +92,6 @@ function bookingsAPI(app) {
                 return res.status(400).send({ error: "Invalid status" });
             }
 
-            // Verify the vendor owns the ticket associated with this booking
             const booking = await bookingsColl.aggregate([
                 { $match: { _id: new ObjectId(id) } },
                 {
